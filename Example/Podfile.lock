@@ -1,0 +1,38 @@
+PODS:
+  - Alamofire (5.6.2)
+  - Moya (15.0.0):
+    - Moya/Core (= 15.0.0)
+  - Moya/Core (15.0.0):
+    - Alamofire (~> 5.0)
+  - Network (0.1.2):
+    - Moya (~> 15.0)
+  - RatingBox (0.2.0):
+    - Network (= 0.1.2)
+    - SnapKit (~> 5.0)
+  - SnapKit (5.0.1)
+
+DEPENDENCIES:
+  - RatingBox (from `../`)
+
+SPEC REPOS:
+  https://gitee.com/talon163/my-private-pod-specs.git:
+    - Network
+  trunk:
+    - Alamofire
+    - Moya
+    - SnapKit
+
+EXTERNAL SOURCES:
+  RatingBox:
+    :path: "../"
+
+SPEC CHECKSUMS:
+  Alamofire: d368e1ff8a298e6dde360e35a3e68e6c610e7204
+  Moya: 138f0573e53411fb3dc17016add0b748dfbd78ee
+  Network: df016a2b9129d50c5744e57bf8a28e59de433a46
+  RatingBox: f68f7510076cfe41136f7b3e29a6a9fa40e7fd47
+  SnapKit: 97b92857e3df3a0c71833cce143274bf6ef8e5eb
+
+PODFILE CHECKSUM: c96ab733e07348303c9c6642eb07239caa3e75de
+
+COCOAPODS: 1.12.0

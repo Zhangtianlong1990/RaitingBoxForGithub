@@ -1,0 +1,15 @@
+source 'https://gitee.com/talon163/my-private-pod-specs.git'  # 私有Specs仓库
+source 'https://cdn.cocoapods.org/'  # 官方仓库（或者使用https://github.com/CocoaPods/Specs.git）
+use_frameworks!
+
+platform :ios, '13.0'
+
+target 'RatingBox_Example' do
+  pod 'RatingBox', :path => '../'
+
+  target 'RatingBox_Tests' do
+    inherit! :search_paths
+
+    
+  end
+end
