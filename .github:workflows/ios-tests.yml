@@ -2,9 +2,9 @@ name: iOS Unit Tests
 
 on:
   push:
-    branches: [ main ]  # 触发分支，根据你的主分支名调整
+    branches: [ master ]  # 触发分支，根据你的主分支名调整
   pull_request:
-    branches: [ main ]
+    branches: [ master ]
 
 jobs:
   test:
