@@ -4,7 +4,7 @@ on: [push, pull_request]
 
 jobs:
   test:
-    runs-on: macOS-latest  # 必须使用 macOS 环境
+    runs-on: macOS-latest
     
     steps:
     - name: Checkout code
@@ -21,7 +21,6 @@ jobs:
         PRIVATE_SPECS_USERNAME: ${{ secrets.PRIVATE_SPECS_USERNAME }}
         PRIVATE_SPECS_TOKEN: ${{ secrets.PRIVATE_SPECS_TOKEN }}
       run: |
-        # 添加私有 specs repo 凭据
         git config --global credential.helper store
         echo "https://${PRIVATE_SPECS_USERNAME}:${PRIVATE_SPECS_TOKEN}@gitee.com" > ~/.git-credentials
       
@@ -32,7 +31,6 @@ jobs:
         
     - name: Add private specs repo
       run: |
-        # 添加私有 specs 仓库
         pod repo add gitee-talon163-my-private-pod-specs https://gitee.com/talon163/my-private-pod-specs.git
         pod repo update
       
@@ -41,12 +39,34 @@ jobs:
         cd Example
         pod install
       
+    # 诊断步骤
+    - name: List project schemes
+      run: |
+        cd Example
+        ls -la RatingBox.xcodeproj/xcshareddata/xcschemes
+        xcodebuild -workspace RatingBox.xcworkspace -list
+      
     - name: Run Unit Tests
       run: |
         cd Example
+        
+        # 使用正确的 scheme 名称
+        SCHEME="RatingBox-Example"  # 根据诊断结果修改
+        
+        set -o pipefail
         xcodebuild test \
-          -workspace RatingBox.xcworkspace \  # 替换为你的工作空间名称
-          -scheme RatingBox-Example \         # 替换为你的 scheme 名称
+          -workspace RatingBox.xcworkspace \
+          -scheme "$SCHEME" \
           -destination 'platform=iOS Simulator,name=iPhone 15 Pro,OS=latest' \
           ONLY_ACTIVE_ARCH=YES \
-          | xcpretty && exit ${PIPESTATUS[0]}
+          CODE_SIGNING_ALLOWED=NO \
+          | tee build.log
+        
+        # 检查测试结果
+        if grep -q "TEST SUCCEEDED" build.log; then
+          echo "✅ Tests passed"
+        else
+          echo "❌ Tests failed"
+          cat build.log
+          exit 1
+        fi
