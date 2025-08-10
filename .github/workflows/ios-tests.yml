@@ -39,34 +39,44 @@ jobs:
         cd Example
         pod install
       
-    # 列出可用模拟器
-    - name: List available simulators
-      run: xcrun simctl list devices | grep -E 'iPhone|iPad'
+    # 列出所有可用模拟器（用于调试）
+    - name: List all available simulators
+      run: xcrun simctl list devices
       
     - name: Run Unit Tests
       run: |
         cd Example
         
-        # 使用正确的 scheme 名称
         SCHEME="RatingBox-Example"
         
-        # 筛选可用的iPhone模拟器（排除visionOS和iPad），优先选择iPhone 16系列
-        DEVICE_INFO=$(xcrun simctl list devices | grep -E 'iPhone [0-9A-Za-z ]+' | grep -v 'visionOS' | grep -v 'iPad' | grep -E 'iOS [0-9.]+' | head -1)
+        # 改进的模拟器选择逻辑：先找iPhone，找不到则用iPad，再找不到则用任意iOS模拟器
+        # 第一步：尝试找到任何iPhone模拟器
+        DEVICE_INFO=$(xcrun simctl list devices "iPhone" | grep -E "iOS [0-9.]+.*(available|booted)" | head -1)
         
-        # 提取设备ID（格式：设备名 (ID)）
-        DEVICE_ID=$(echo "$DEVICE_INFO" | awk -F'[()]' '{print $2}')
-        # 提取设备名称
-        DEVICE_NAME=$(echo "$DEVICE_INFO" | awk -F'[()]' '{print $1}' | xargs)
-        # 提取系统版本
-        OS_VERSION=$(echo "$DEVICE_INFO" | awk -F'OS=' '{print $2}' | awk '{print $1}')
-        
-        # 检查是否获取到有效ID
-        if [ -z "$DEVICE_ID" ]; then
-          echo "❌ 未找到可用的iPhone模拟器"
-          exit 1
+        # 第二步：如果没找到iPhone，尝试找iPad模拟器
+        if [ -z "$DEVICE_INFO" ]; then
+          echo "##[debug] No iPhone simulator found, trying iPad..."
+          DEVICE_INFO=$(xcrun simctl list devices "iPad" | grep -E "iOS [0-9.]+.*(available|booted)" | head -1)
         fi
         
-        echo "##[debug] Using device: $DEVICE_NAME (ID: $DEVICE_ID, OS: $OS_VERSION)"
+        # 第三步：如果还是没找到，找任何iOS模拟器
+        if [ -z "$DEVICE_INFO" ]; then
+          echo "##[debug] No specific device found, trying any iOS simulator..."
+          DEVICE_INFO=$(xcrun simctl list devices | grep -E "iOS [0-9.]+.*(available|booted)" | head -1)
+        fi
+        
+        # 提取设备ID和名称
+        DEVICE_ID=$(echo "$DEVICE_INFO" | awk -F'[()]' '{print $2}')
+        DEVICE_NAME=$(echo "$DEVICE_INFO" | awk -F'[()]' '{print $1}' | xargs)
+        
+        # 最后的保障：如果所有方法都失败，使用模拟器占位符
+        if [ -z "$DEVICE_ID" ]; then
+          echo "##[debug] Using fallback simulator"
+          DEVICE_ID="dvtdevice-DVTiOSDeviceSimulatorPlaceholder-iphonesimulator:placeholder"
+          DEVICE_NAME="Any iOS Simulator Device"
+        fi
+        
+        echo "##[debug] Using device: $DEVICE_NAME (ID: $DEVICE_ID)"
         
         set -o pipefail
         xcodebuild test \
@@ -77,7 +87,6 @@ jobs:
           CODE_SIGNING_ALLOWED=NO \
           | tee build.log
         
-        # 检查测试结果
         if grep -q "TEST SUCCEEDED" build.log; then
           echo "✅ Tests passed"
         else
