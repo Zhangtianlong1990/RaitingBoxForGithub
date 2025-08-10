@@ -4,17 +4,17 @@ on: [push, pull_request]
 
 jobs:
   test:
-    runs-on: macOS-latest
+    runs-on: macOS-12  # macOS 12 (Monterey) 支持Xcode 13.3
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Select Xcode
-      run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-      
-    - name: Show Xcode version
-      run: xcodebuild -version
+    - name: Select Xcode 13.3
+      run: |
+        # 列出所有可用Xcode版本并选择13.3
+        sudo xcode-select -s /Applications/Xcode_13.3.app/Contents/Developer
+        xcodebuild -version
       
     - name: Configure private specs repo access
       env:
@@ -24,10 +24,11 @@ jobs:
         git config --global credential.helper store
         echo "https://${PRIVATE_SPECS_USERNAME}:${PRIVATE_SPECS_TOKEN}@gitee.com" > ~/.git-credentials
       
-    - name: Install CocoaPods
+    - name: Install CocoaPods 1.12.0
       run: |
-        gem install cocoapods
-        pod --version
+        # 安装特定版本的CocoaPods
+        gem install cocoapods -v 1.12.0
+        pod --version  # 验证版本
         
     - name: Add private specs repo
       run: |
@@ -39,9 +40,20 @@ jobs:
         cd Example
         pod install
       
-    # 列出所有可用模拟器（用于调试）
-    - name: List all available simulators
-      run: xcrun simctl list devices
+    # 确保iPhone 8 (iOS 15.4)模拟器存在并启动
+    - name: Create and boot iPhone 8 simulator with iOS 15.4
+      run: |
+        # 检查是否已存在该模拟器
+        SIMULATOR_ID=$(xcrun simctl list devices | grep "iPhone 8 (15.4)" | grep -Eo "[0-9A-F-]{36}")
+        
+        # 如果不存在则创建
+        if [ -z "$SIMULATOR_ID" ]; then
+          echo "Creating iPhone 8 (iOS 15.4) simulator..."
+          SIMULATOR_ID=$(xcrun simctl create "iPhone 8 (15.4)" "iPhone 8" "iOS 15.4")
+        fi
+        
+        # 启动模拟器
+        xcrun simctl boot $SIMULATOR_ID
       
     - name: Run Unit Tests
       run: |
@@ -49,40 +61,16 @@ jobs:
         
         SCHEME="RatingBox-Example"
         
-        # 改进的模拟器选择逻辑：先找iPhone，找不到则用iPad，再找不到则用任意iOS模拟器
-        # 第一步：尝试找到任何iPhone模拟器
-        DEVICE_INFO=$(xcrun simctl list devices "iPhone" | grep -E "iOS [0-9.]+.*(available|booted)" | head -1)
+        # 获取iPhone 8 (iOS 15.4)模拟器ID
+        SIMULATOR_ID=$(xcrun simctl list devices | grep "iPhone 8 (15.4)" | grep -Eo "[0-9A-F-]{36}")
         
-        # 第二步：如果没找到iPhone，尝试找iPad模拟器
-        if [ -z "$DEVICE_INFO" ]; then
-          echo "##[debug] No iPhone simulator found, trying iPad..."
-          DEVICE_INFO=$(xcrun simctl list devices "iPad" | grep -E "iOS [0-9.]+.*(available|booted)" | head -1)
-        fi
-        
-        # 第三步：如果还是没找到，找任何iOS模拟器
-        if [ -z "$DEVICE_INFO" ]; then
-          echo "##[debug] No specific device found, trying any iOS simulator..."
-          DEVICE_INFO=$(xcrun simctl list devices | grep -E "iOS [0-9.]+.*(available|booted)" | head -1)
-        fi
-        
-        # 提取设备ID和名称
-        DEVICE_ID=$(echo "$DEVICE_INFO" | awk -F'[()]' '{print $2}')
-        DEVICE_NAME=$(echo "$DEVICE_INFO" | awk -F'[()]' '{print $1}' | xargs)
-        
-        # 最后的保障：如果所有方法都失败，使用模拟器占位符
-        if [ -z "$DEVICE_ID" ]; then
-          echo "##[debug] Using fallback simulator"
-          DEVICE_ID="dvtdevice-DVTiOSDeviceSimulatorPlaceholder-iphonesimulator:placeholder"
-          DEVICE_NAME="Any iOS Simulator Device"
-        fi
-        
-        echo "##[debug] Using device: $DEVICE_NAME (ID: $DEVICE_ID)"
+        echo "##[debug] Using iPhone 8 simulator (iOS 15.4) with ID: $SIMULATOR_ID"
         
         set -o pipefail
         xcodebuild test \
           -workspace RatingBox.xcworkspace \
           -scheme "$SCHEME" \
-          -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+          -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
           ONLY_ACTIVE_ARCH=YES \
           CODE_SIGNING_ALLOWED=NO \
           | tee build.log
@@ -93,4 +81,13 @@ jobs:
           echo "❌ Tests failed"
           cat build.log
           exit 1
+        fi
+        
+    # 测试完成后关闭模拟器
+    - name: Shutdown simulator
+      if: always()
+      run: |
+        SIMULATOR_ID=$(xcrun simctl list devices | grep "iPhone 8 (15.4)" | grep -Eo "[0-9A-F-]{36}")
+        if [ -n "$SIMULATOR_ID" ]; then
+          xcrun simctl shutdown $SIMULATOR_ID
         fi
