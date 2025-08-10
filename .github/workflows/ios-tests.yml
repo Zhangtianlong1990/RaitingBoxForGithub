@@ -50,11 +50,21 @@ jobs:
         # 使用正确的 scheme 名称
         SCHEME="RatingBox-Example"
         
-        # 自动选择第一个可用的 iPhone 模拟器
-        DEVICE_INFO=$(xcrun simctl list devices | grep -E 'iPhone.*(18|17|16)' | head -1)
+        # 筛选可用的iPhone模拟器（排除visionOS和iPad），优先选择iPhone 16系列
+        DEVICE_INFO=$(xcrun simctl list devices | grep -E 'iPhone [0-9A-Za-z ]+' | grep -v 'visionOS' | grep -v 'iPad' | grep -E 'iOS [0-9.]+' | head -1)
+        
+        # 提取设备ID（格式：设备名 (ID)）
+        DEVICE_ID=$(echo "$DEVICE_INFO" | awk -F'[()]' '{print $2}')
+        # 提取设备名称
         DEVICE_NAME=$(echo "$DEVICE_INFO" | awk -F'[()]' '{print $1}' | xargs)
-        DEVICE_ID=$(echo "$DEVICE_INFO" | awk -F'[()]' '{print $NF}' | tr -d ')')
+        # 提取系统版本
         OS_VERSION=$(echo "$DEVICE_INFO" | awk -F'OS=' '{print $2}' | awk '{print $1}')
+        
+        # 检查是否获取到有效ID
+        if [ -z "$DEVICE_ID" ]; then
+          echo "❌ 未找到可用的iPhone模拟器"
+          exit 1
+        fi
         
         echo "##[debug] Using device: $DEVICE_NAME (ID: $DEVICE_ID, OS: $OS_VERSION)"
         
