@@ -16,10 +16,25 @@ jobs:
     - name: Show Xcode version
       run: xcodebuild -version
       
+    - name: Configure private specs repo access
+      env:
+        PRIVATE_SPECS_USERNAME: ${{ secrets.PRIVATE_SPECS_USERNAME }}
+        PRIVATE_SPECS_TOKEN: ${{ secrets.PRIVATE_SPECS_TOKEN }}
+      run: |
+        # 添加私有 specs repo 凭据
+        git config --global credential.helper store
+        echo "https://${PRIVATE_SPECS_USERNAME}:${PRIVATE_SPECS_TOKEN}@gitee.com" > ~/.git-credentials
+      
     - name: Install CocoaPods
       run: |
         gem install cocoapods
         pod --version
+        
+    - name: Add private specs repo
+      run: |
+        # 添加私有 specs 仓库
+        pod repo add gitee-talon163-my-private-pod-specs https://gitee.com/talon163/my-private-pod-specs.git
+        pod repo update
       
     - name: Install Dependencies
       run: |
