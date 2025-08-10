@@ -39,25 +39,30 @@ jobs:
         cd Example
         pod install
       
-    # 诊断步骤
-    - name: List project schemes
-      run: |
-        cd Example
-        ls -la RatingBox.xcodeproj/xcshareddata/xcschemes
-        xcodebuild -workspace RatingBox.xcworkspace -list
+    # 列出可用模拟器
+    - name: List available simulators
+      run: xcrun simctl list devices | grep -E 'iPhone|iPad'
       
     - name: Run Unit Tests
       run: |
         cd Example
         
         # 使用正确的 scheme 名称
-        SCHEME="RatingBox-Example"  # 根据诊断结果修改
+        SCHEME="RatingBox-Example"
+        
+        # 自动选择第一个可用的 iPhone 模拟器
+        DEVICE_INFO=$(xcrun simctl list devices | grep -E 'iPhone.*(18|17|16)' | head -1)
+        DEVICE_NAME=$(echo "$DEVICE_INFO" | awk -F'[()]' '{print $1}' | xargs)
+        DEVICE_ID=$(echo "$DEVICE_INFO" | awk -F'[()]' '{print $NF}' | tr -d ')')
+        OS_VERSION=$(echo "$DEVICE_INFO" | awk -F'OS=' '{print $2}' | awk '{print $1}')
+        
+        echo "##[debug] Using device: $DEVICE_NAME (ID: $DEVICE_ID, OS: $OS_VERSION)"
         
         set -o pipefail
         xcodebuild test \
           -workspace RatingBox.xcworkspace \
           -scheme "$SCHEME" \
-          -destination 'platform=iOS Simulator,name=iPhone 15 Pro,OS=latest' \
+          -destination "platform=iOS Simulator,id=$DEVICE_ID" \
           ONLY_ACTIVE_ARCH=YES \
           CODE_SIGNING_ALLOWED=NO \
           | tee build.log
