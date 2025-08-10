@@ -4,29 +4,21 @@ on: [push, pull_request]
 
 jobs:
   test:
-    runs-on: macos-12
+    runs-on: macOS-latest  # 必须使用 macOS 环境
     
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Setup Xcode 13.3
-      run: |
-        sudo xcode-select -s /Applications/Xcode_13.3.app/Contents/Developer
-        sudo xcodebuild -license accept
-        xcodebuild -version
-        
-    - name: Cache CocoaPods
-      uses: actions/cache@v3
-      with:
-        path: Example/Pods
-        key: ${{ runner.os }}-pods-${{ hashFiles('Example/Podfile.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-pods-
+    - name: Select Xcode
+      run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
       
-    - name: Install CocoaPods 1.12.0
+    - name: Show Xcode version
+      run: xcodebuild -version
+      
+    - name: Install CocoaPods
       run: |
-        gem install cocoapods -v 1.12.0 --no-document
+        gem install cocoapods
         pod --version
       
     - name: Install Dependencies
@@ -34,39 +26,12 @@ jobs:
         cd Example
         pod install
       
-    - name: Run Unit Tests on iPhone 8
+    - name: Run Unit Tests
       run: |
-        set -o pipefail
         cd Example
-        
-        # 创建并启动模拟器
-        DEVICE_UDID=$(xcrun simctl create "iPhone 8 Test" "iPhone 8" com.apple.CoreSimulator.SimRuntime.iOS-15-4)
-        xcrun simctl boot $DEVICE_UDID
-        
-        # 运行测试
         xcodebuild test \
-          -workspace RatingBox.xcworkspace \
-          -scheme RatingBox-Example \
-          -destination "platform=iOS Simulator,id=$DEVICE_UDID" \
+          -workspace RatingBox.xcworkspace \  # 替换为你的工作空间名称
+          -scheme RatingBox-Example \         # 替换为你的 scheme 名称
+          -destination 'platform=iOS Simulator,name=iPhone 15 Pro,OS=latest' \
           ONLY_ACTIVE_ARCH=YES \
-          CODE_SIGNING_ALLOWED=NO \
-          | tee build.log
-        
-        # 检查测试结果
-        if grep -q "TEST SUCCEEDED" build.log; then
-          echo "✅ Tests passed"
-        else
-          echo "❌ Tests failed"
-          cat build.log
-          exit 1
-        fi
-      
-    - name: Clean up simulator
-      if: always()
-      run: |
-        # 关闭并删除创建的模拟器
-        DEVICE_UDID=$(xcrun simctl list devices | grep 'iPhone 8 Test' | awk -F '[()]+' '{print $NF}')
-        if [ -n "$DEVICE_UDID" ]; then
-          xcrun simctl shutdown $DEVICE_UDID
-          xcrun simctl delete $DEVICE_UDID
-        fi
+          | xcpretty && exit ${PIPESTATUS[0]}
