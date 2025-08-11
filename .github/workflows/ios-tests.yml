@@ -4,7 +4,8 @@ on: [push, pull_request]
 
 jobs:
   test:
-    runs-on: macOS-12  # macOS 12 (Monterey) 支持Xcode 13.3
+    runs-on: macOS-12
+    timeout-minutes: 30  # 设置整个作业超时为30分钟
     
     steps:
     - name: Checkout code
@@ -12,7 +13,13 @@ jobs:
       
     - name: Select Xcode 13.3
       run: |
-        # 列出所有可用Xcode版本并选择13.3
+        # 确保Xcode 13.3可用
+        if [ ! -d "/Applications/Xcode_13.3.app" ]; then
+          echo "Xcode 13.3 not found! Available Xcode versions:"
+          ls /Applications | grep Xcode
+          exit 1
+        fi
+        
         sudo xcode-select -s /Applications/Xcode_13.3.app/Contents/Developer
         xcodebuild -version
       
@@ -26,46 +33,77 @@ jobs:
       
     - name: Install CocoaPods 1.12.0
       run: |
-        # 安装特定版本的CocoaPods
-        gem install cocoapods -v 1.12.0
-        pod --version  # 验证版本
+        # 使用更快的RubyGems源
+        gem sources --add https://gems.ruby-china.com/ --remove https://rubygems.org/
+        gem install cocoapods -v 1.12.0 --no-document
+        pod --version
         
     - name: Add private specs repo
       run: |
         pod repo add gitee-talon163-my-private-pod-specs https://gitee.com/talon163/my-private-pod-specs.git
         pod repo update
       
-    - name: Install Dependencies
+    - name: Install Dependencies with cache
       run: |
         cd Example
-        pod install
-      
-    # 确保iPhone 8 (iOS 15.4)模拟器存在并启动
-    - name: Create and boot iPhone 8 simulator with iOS 15.4
-      run: |
-        # 检查是否已存在该模拟器
-        SIMULATOR_ID=$(xcrun simctl list devices | grep "iPhone 8 (15.4)" | grep -Eo "[0-9A-F-]{36}")
         
-        # 如果不存在则创建
-        if [ -z "$SIMULATOR_ID" ]; then
-          echo "Creating iPhone 8 (iOS 15.4) simulator..."
-          SIMULATOR_ID=$(xcrun simctl create "iPhone 8 (15.4)" "iPhone 8" "iOS 15.4")
+        # 使用更快的pod安装参数
+        pod install --repo-update --no-repo-update --verbose
+      
+    # 使用更可靠的方式创建模拟器
+    - name: Create and boot iPhone 8 simulator
+      run: |
+        # 确保iOS 15.4运行时可用
+        RUNTIME=$(xcrun simctl list runtimes | grep -E 'iOS 15\.4|com.apple.CoreSimulator.SimRuntime.iOS-15-4' | head -1 | awk -F'[()]' '{print $2}')
+        
+        if [ -z "$RUNTIME" ]; then
+          echo "iOS 15.4 runtime not available. Available runtimes:"
+          xcrun simctl list runtimes
+          exit 1
         fi
         
+        echo "Using runtime: $RUNTIME"
+        
+        # 创建模拟器
+        SIMULATOR_ID=$(xcrun simctl create "CI-iPhone-8" "iPhone 8" "$RUNTIME")
+        
+        if [ -z "$SIMULATOR_ID" ]; then
+          echo "Failed to create simulator"
+          exit 1
+        fi
+        
+        echo "Created simulator with ID: $SIMULATOR_ID"
+        
         # 启动模拟器
-        xcrun simctl boot $SIMULATOR_ID
-      
+        xcrun simctl bootstatus "$SIMULATOR_ID" -b
+        xcrun simctl list devices
+        
+        # 等待模拟器完全启动
+        echo "Waiting for simulator to boot..."
+        sleep 30
+        
+    # 使用更可靠的测试命令
     - name: Run Unit Tests
+      timeout-minutes: 15  # 单独为测试设置超时
       run: |
         cd Example
         
         SCHEME="RatingBox-Example"
         
-        # 获取iPhone 8 (iOS 15.4)模拟器ID
-        SIMULATOR_ID=$(xcrun simctl list devices | grep "iPhone 8 (15.4)" | grep -Eo "[0-9A-F-]{36}")
+        # 获取模拟器ID
+        SIMULATOR_ID=$(xcrun simctl list devices | grep "CI-iPhone-8" | grep -Eo "[0-9A-F-]{36}" | head -1)
         
-        echo "##[debug] Using iPhone 8 simulator (iOS 15.4) with ID: $SIMULATOR_ID"
+        if [ -z "$SIMULATOR_ID" ]; then
+          echo "##[error] Could not find simulator ID"
+          exit 1
+        fi
         
+        echo "##[debug] Using iPhone 8 simulator with ID: $SIMULATOR_ID"
+        
+        # 确保模拟器已启动
+        xcrun simctl boot "$SIMULATOR_ID" || true
+        
+        # 运行测试 - 不使用管道以避免缓冲问题
         set -o pipefail
         xcodebuild test \
           -workspace RatingBox.xcworkspace \
@@ -73,21 +111,29 @@ jobs:
           -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
           ONLY_ACTIVE_ARCH=YES \
           CODE_SIGNING_ALLOWED=NO \
-          | tee build.log
+          > build.log 2>&1
         
+        # 检查测试结果
         if grep -q "TEST SUCCEEDED" build.log; then
           echo "✅ Tests passed"
-        else
+          cat build.log
+        elif grep -q "TEST FAILED" build.log; then
           echo "❌ Tests failed"
+          cat build.log
+          exit 1
+        else
+          echo "##[error] Test result not found in log"
           cat build.log
           exit 1
         fi
         
-    # 测试完成后关闭模拟器
-    - name: Shutdown simulator
+    # 清理模拟器
+    - name: Shutdown and delete simulator
       if: always()
       run: |
-        SIMULATOR_ID=$(xcrun simctl list devices | grep "iPhone 8 (15.4)" | grep -Eo "[0-9A-F-]{36}")
+        SIMULATOR_ID=$(xcrun simctl list devices | grep "CI-iPhone-8" | grep -Eo "[0-9A-F-]{36}" | head -1)
         if [ -n "$SIMULATOR_ID" ]; then
-          xcrun simctl shutdown $SIMULATOR_ID
+          echo "Shutting down and deleting simulator: $SIMULATOR_ID"
+          xcrun simctl shutdown "$SIMULATOR_ID" || true
+          xcrun simctl delete "$SIMULATOR_ID" || true
         fi
